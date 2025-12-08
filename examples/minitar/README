@@ -10,3 +10,31 @@ a program using libarchive does not pull in unnecessary code.
 The "minitar" program is also a good starting point for anyone who
 wants to use libarchive for their own purposes, as it demonstrates
 basic usage of the library.
+
+Additional example: `no_compress_examples.c`
+------------------------------------------------------------
+This standalone sample shows how to pack or unpack one or more paths
+into a ustar archive **without** enabling gzip/bzip2 or other filters.
+Build it with only the core libarchive static/shared library:
+
+    cc -D_FILE_OFFSET_BITS=64 -o no_compress_examples \
+       no_compress_examples.c -larchive
+
+Usage:
+
+    ./no_compress_examples c output.tar <path...>
+    ./no_compress_examples x archive.tar <destination-dir>
+
+主要逻辑与 API 说明
+------------------------------------------------------------
+- 打包（`pack_paths`）：
+  - `archive_write_new` 创建写句柄，`archive_write_add_filter_none` 明确不启用 gzip/bzip2 等过滤器，`archive_write_set_format_ustar` 设定 tar 格式。
+  - 对每个输入路径使用 `archive_read_disk_new`/`archive_read_disk_open` 遍历目录树，`archive_read_next_header2` 逐个生成 `archive_entry`，`archive_read_disk_descend` 实现递归。
+  - `archive_write_header` 写 entry 元数据，常规文件再通过 `archive_write_data` 把 `read` 出的内容写入归档。
+
+- 解包（`extract_to`）：
+  - `archive_read_new` + `archive_read_support_filter_none` + `archive_read_support_format_tar` 只开启纯 tar 读取。
+  - `archive_write_disk_new` 负责落盘；`archive_write_disk_set_options` 应用时间/权限/ACL/flags，`archive_write_disk_set_standard_lookup` 查找 uid/gid/用户/组名。
+  - 读取循环用 `archive_read_next_header` 获取 entry，重写路径后调用 `archive_write_header` 创建目标文件（夹），有数据的 entry 通过 `copy_data` 调用 `archive_read_data_block`/`archive_write_data_block` 逐块写入。
+
+以上 API 即构成最小的“无压缩 ustar 打包与解包”流程，可作为自定义工具的基础骨架。
